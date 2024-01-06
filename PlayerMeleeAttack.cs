@@ -1,60 +1,53 @@
 using StarterAssets;
+using System;
 using System.Collections;
 using System.Collections.Generic;
-using Unity.Burst.Intrinsics;
+using System.Net.NetworkInformation;
 using Unity.VisualScripting;
 using UnityEngine;
+using UnityEngine.InputSystem.LowLevel;
 
-public class PlayerMeleeAttack : MonoBehaviour
+public class PlayerAttack : MonoBehaviour
 {
     [Header("Combo Attack")]
     public string[] animationCombo;
-    private float attackTime;
-    private float attackDelay;
-    private int currentCombo;
-    public bool isAttacking;
+    public float attackTime;
+    public float attackDelay;
+    public int currentCombo;
     [Header("Attack Info")]
+    [SerializeField] float attackRange;
+    [SerializeField] Transform attackPoint;
     [SerializeField] LayerMask Target;
-    [SerializeField] Transform rangeAttackPoint;
     //Input && anim
     [Header("Weapon Info")]
     public Transform SpawnPoint;
     public GameObject[] swordSlash;
     public GameObject[] claymoreSlash;
-    public GameObject catalystSlash;
-    public GameObject bullet;
 
     private StarterAssetsInputs input;
-    private ThirdPersonController controller;
     private Animator anim;
-    private AimSCript aim;
-    private float cooldown;
     private string weaponType;
     private void Start()
     {
-        aim = GetComponent<AimSCript>();
         input = GetComponent<StarterAssetsInputs>();
         anim = GetComponent<Animator>();
-        controller = GetComponent<ThirdPersonController>();
         weaponType = PlayerPrefs.GetString("weaponType");
         if (weaponType == "sword")
         {
-            attackTime = 1.25f * InGameManager.Instance.playerAttackSpeed;
+            attackRange = 1.5f;
+            attackTime = 1.25f;
         }
         else if (weaponType == "claymore")
         {
-            attackTime = 0.75f * InGameManager.Instance.playerAttackSpeed;
-        }
-        else
-        {
-            attackTime = 1.25f * InGameManager.Instance.playerAttackSpeed;
+            attackRange = 2.5f;
+            attackTime = 0.75f;
         }
     }
     private void Update()
     {
         if (input.shoot && Time.time >= attackDelay)
         {
-            anim.Play(animationCombo[currentCombo], InGameManager.Instance.WeaponAnimation());
+            anim.Play(animationCombo[currentCombo],InGameManager.Instance.WeaponAnimation());
             anim.SetLayerWeight(InGameManager.Instance.WeaponAnimation(), 1);
             Attack();
             NextAttack();
@@ -64,11 +57,6 @@ public class PlayerMeleeAttack : MonoBehaviour
                 ResetCombo();
             }
             input.shoot = false;
-        }
-        if(Time.time >= cooldown)
-        {
-            InGameManager.Instance.isPlayerAttacking = false;
-            isAttacking = false;
         }
     }
     private void ResetCombo()
@@ -82,19 +70,15 @@ public class PlayerMeleeAttack : MonoBehaviour
     }
     public void Attack()
     {
-        InGameManager.Instance.isPlayerAttacking = true;
-
-        isAttacking = true;
-        if (weaponType == "catalyst")
+        Collider[] hits = Physics.OverlapSphere(attackPoint.position, attackRange, Target);
+        ActiveSlash();
+        foreach (Collider hit in hits)
         {
-            StartCoroutine(CataLystShoot());   
-            ActiveSlash();
-            AttackCoolDown();
-        }
-        else
-        {
-            ActiveSlash();
-            AttackCoolDown();
+            if(hit.TryGetComponent<HittedObject>(out var obj))
+            {
+                obj.TakeDamage(InGameManager.Instance.playerATK);
+                Debug.Log("Hits");
+            }
         }
     }
     public void ActiveSlash()
@@ -102,45 +86,26 @@ public class PlayerMeleeAttack : MonoBehaviour
         if (weaponType == "sword")
         {
             swordSlash[currentCombo].SetActive(true);
-            SoundManager.Instance.PlaySFX("Sword" + (currentCombo + 1));
             StartCoroutine(ActiveTime(swordSlash[currentCombo]));
         }
         else if (weaponType == "claymore")
         {
             claymoreSlash[currentCombo].SetActive(true);
-            SoundManager.Instance.PlaySFX("Claymore" + (currentCombo + 1));
             StartCoroutine(ActiveTime(claymoreSlash[currentCombo]));
         }
-        else if (weaponType == "catalyst")
+        else
         {
-            catalystSlash.SetActive(true);
-            SoundManager.Instance.PlaySFX("Catalyst");
-            StartCoroutine(ActiveTime(catalystSlash));
+            
         }
     }
-    public float AttackCoolDown()
+    private void OnDrawGizmos()
     {
-        cooldown = Time.time + 1f / attackTime;
-        return cooldown;
+        Gizmos.color = Color.yellow;
+        Gizmos.DrawWireSphere(attackPoint.position, attackRange);
     }
     IEnumerator ActiveTime(GameObject obj)
     {
-        controller.MoveSpeed = 1;
-        controller.SprintSpeed = 1;
         yield return new WaitForSeconds(1f);
         obj.SetActive(false);
-        controller.MoveSpeed = 5;
-        controller.SprintSpeed = 9;
-    }
-    IEnumerator CataLystShoot()
-    {
-        int time = 0;
-        while (time < 2)
-        {
-            yield return new WaitForSeconds(0.1f);
-            Vector3 aimDir = (aim.shootDir - rangeAttackPoint.position).normalized;
-            Instantiate(bullet, rangeAttackPoint.position, Quaternion.LookRotation(aimDir, Vector3.up));
-            time++;
-        }
     }
 }
